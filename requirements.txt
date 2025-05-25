@@ -1,7 +1,6 @@
 transformers==4.47.0
 evaluate==0.4.3
 datasets==2.14.4
-torch==2.1.0
 fastapi
 uvicorn
 python-multipart

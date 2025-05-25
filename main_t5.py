@@ -1,5 +1,5 @@
 from utils.constants import *
-from utils.functions import set_seed, prepare_dataset_t5
+from utils.functions import set_seed, prepare_dataset
 
 set_seed(SEED)
 
@@ -12,7 +12,7 @@ import torch
 wandb.login(key=os.getenv("WANDB_API_KEY"))
 huggingface_hub.login(token=os.getenv("HUGGINGFACE_TOKEN"))
 
-train_dataset, val_dataset, test_dataset, tokenizer = prepare_dataset_t5(TOKENIZER_T5)
+train_dataset, val_dataset, test_dataset, tokenizer = prepare_dataset(TOKENIZER_T5)
 
 # Define compute_metrics using ROUGE for summarization
 rouge = evaluate.load("rouge")
@@ -33,38 +33,38 @@ def get_last_checkpoint(output_dir):
         return os.path.join(output_dir, last_checkpoint)
     return None
 
-checkpoint = get_last_checkpoint(EXPERIMENT_RESULTS_DIR_T5_SUMMARIZATION)
+checkpoint = get_last_checkpoint(EXPERIMENT_RESULTS_DIR_T5)
 if checkpoint:
     model = T5ForConditionalGeneration.from_pretrained(checkpoint)
 else:
-    model = T5ForConditionalGeneration.from_pretrained(MODEL_T5_SUMMARIZATION)
+    model = T5ForConditionalGeneration.from_pretrained(MODEL_T5)
 
 training_args = TrainingArguments(
-    run_name=EXPERIMENT_NAME_T5_SUMMARIZATION,
+    run_name=EXPERIMENT_NAME_T5,
     report_to="wandb",
     evaluation_strategy='steps',
     save_strategy='steps',
-    eval_steps=EVAL_STEPS_T5_SUMMARIZATION,
-    save_steps=SAVE_STEPS_T5_SUMMARIZATION,
-    per_device_train_batch_size=TRAIN_BATCH_SIZE_T5_SUMMARIZATION,
-    per_device_eval_batch_size=EVAL_BATCH_SIZE_T5_SUMMARIZATION,
-    num_train_epochs=NUM_TRAIN_EPOCHS_T5_SUMMARIZATION,
-    weight_decay=WEIGHT_DECAY_T5_SUMMARIZATION,
-    learning_rate=LR_T5_SUMMARIZATION,
+    eval_steps=EVAL_STEPS_T5,
+    save_steps=SAVE_STEPS_T5,
+    per_device_train_batch_size=TRAIN_BATCH_SIZE_T5,
+    per_device_eval_batch_size=EVAL_BATCH_SIZE_T5,
+    num_train_epochs=NUM_TRAIN_EPOCHS_T5,
+    weight_decay=WEIGHT_DECAY_T5,
+    learning_rate=LR_T5,
     lr_scheduler_type="linear",
-    output_dir=EXPERIMENT_RESULTS_DIR_T5_SUMMARIZATION,
-    logging_dir=EXPERIMENT_RESULTS_DIR_T5_SUMMARIZATION + "/logs",
-    logging_steps=LOGGING_STEPS_T5_SUMMARIZATION,
+    output_dir=EXPERIMENT_RESULTS_DIR_T5,
+    logging_dir=EXPERIMENT_RESULTS_DIR_T5 + "/logs",
+    logging_steps=LOGGING_STEPS_T5,
     load_best_model_at_end=True,
     metric_for_best_model="eval_rougeL",
     greater_is_better=True,
     save_total_limit=2,
     fp16=True,
-    gradient_accumulation_steps=GRADIENT_ACCUMULATION_STEPS_T5_SUMMARIZATION,
+    gradient_accumulation_steps=GRADIENT_ACCUMULATION_STEPS_T5,
     seed=SEED
 )
 
-optimizer = AdamW(model.parameters(), lr=LR_T5_SUMMARIZATION)
+optimizer = AdamW(model.parameters(), lr=LR_T5)
 total_steps = len(train_dataset) * training_args.num_train_epochs
 
 class LinearDecayWithMinLR(torch.optim.lr_scheduler._LRScheduler):
@@ -104,18 +104,18 @@ else:
 test_results = trainer.evaluate(test_dataset, metric_key_prefix="test")
 
 # [SAVING THINGS]
-model.save_pretrained(EXPERIMENT_RESULTS_DIR_T5_SUMMARIZATION)
-tokenizer.save_pretrained(EXPERIMENT_RESULTS_DIR_T5_SUMMARIZATION)
+model.save_pretrained(EXPERIMENT_RESULTS_DIR_T5)
+tokenizer.save_pretrained(EXPERIMENT_RESULTS_DIR_T5)
 
-with open(EXPERIMENT_RESULTS_DIR_T5_SUMMARIZATION + "/training_args.txt", "w") as f:
+with open(EXPERIMENT_RESULTS_DIR_T5 + "/training_args.txt", "w") as f:
     f.write(str(training_args))
 
-with open(EXPERIMENT_RESULTS_DIR_T5_SUMMARIZATION + "/test_results.txt", "w") as f:
+with open(EXPERIMENT_RESULTS_DIR_T5 + "/test_results.txt", "w") as f:
     f.write(str(test_results))
 
 api = huggingface_hub.HfApi()
 api.upload_large_folder(
-    folder_path=RESULTS_DIR_T5_SUMMARIZATION,
+    folder_path=RESULTS_DIR_T5,
     repo_id="auphong2707/nlp-summarization",
     repo_type="model",
     private=False
