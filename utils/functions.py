@@ -51,7 +51,7 @@ def load_dataset_splits() -> Tuple[dict, dict, dict]:
         - Requires the `datasets` library to be installed.
         - The dataset is expected to have 'article' and 'highlights' fields.
     """
-    dataset = load_dataset("abisee/cnn_dailymail", "3.0.0")
+    dataset = load_dataset("abisee/cnn_dailymail", "3.0.0", cache_dir="/kaggle/working/hf_cache")
     return dataset["train"], dataset["validation"], dataset["test"]
 
 def tokenize_t5(example, tokenizer, max_input_length: int = 512, max_target_length: int = 128):
