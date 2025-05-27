@@ -8,6 +8,7 @@ import evaluate
 from transformers import TrainingArguments, Trainer, T5ForConditionalGeneration, T5Tokenizer, AdamW
 import torch
 
+torch.cuda.empty_cache()
 # [PREPARING DATASET AND FUNCTIONS]
 wandb.login(key=os.getenv("WANDB_API_KEY"))
 huggingface_hub.login(token=os.getenv("HUGGINGFACE_TOKEN"))
