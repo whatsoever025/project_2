@@ -43,7 +43,7 @@ else:
 training_args = TrainingArguments(
     run_name=EXPERIMENT_NAME_T5,
     report_to="wandb",
-    evaluation_strategy='steps',
+    evaluation_strategy='no',
     save_strategy='steps',
     eval_steps=EVAL_STEPS_T5,
     save_steps=SAVE_STEPS_T5,
