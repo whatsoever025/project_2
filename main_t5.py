@@ -6,7 +6,7 @@ set_seed(SEED)
 import wandb, huggingface_hub, os
 import evaluate
 import numpy as np
-from transformers import TrainingArguments, Trainer, T5ForConditionalGeneration, T5Tokenizer, AdamW
+from transformers import TrainingArguments, Trainer, T5ForConditionalGeneration, T5Tokenizer, AdamW, DataCollatorForSeq2Seq
 import torch
 
 # [PREPARING DATASET AND FUNCTIONS]
@@ -25,22 +25,30 @@ train_dataset, val_dataset, test_dataset, tokenizer = prepare_dataset(
 rouge = evaluate.load("rouge")
 
 def preprocess_logits_for_metrics(logits, labels):
-    # Handle tuple
+    """
+    Preprocess model outputs to ensure valid token IDs for decoding.
+    """
     if isinstance(logits, tuple):
         logits = logits[0]
-    
-    # Convert to tensor
     if not isinstance(logits, torch.Tensor):
         logits = torch.tensor(logits, device=logits.device if hasattr(logits, 'device') else 'cpu')
     
-    # Handle logits
+    # Handle logits or token IDs
     if logits.ndim == 4:  # (batch_size, num_beams, sequence_length, vocab_size)
-        logits = logits.argmax(dim=-1)  # (batch_size, num_beams, sequence_length)
-        logits = logits[:, 0, :]  # Select first beam
+        logits = logits.argmax(dim=-1)[:, 0, :]  # Select first beam
     elif logits.ndim == 3:  # (batch_size, sequence_length, vocab_size)
-        logits = logits.argmax(dim=-1)  # (batch_size, sequence_length)
-    elif logits.ndim == 2:  # (batch_size, sequence_length)
+        logits = logits.argmax(dim=-1)
+    elif logits.ndim == 2:  # (batch_size, sequence_length) - already token IDs
         pass
+    else:
+        raise ValueError(f"Unexpected logits shape: {logits.shape}")
+
+    # Clip token IDs to valid range [0, vocab_size)
+    vocab_size = tokenizer.vocab_size
+    logits = torch.clamp(logits, min=0, max=vocab_size - 1)
+    
+    # Replace invalid or negative token IDs with pad_token_id
+    logits = torch.where(logits < 0, tokenizer.pad_token_id, logits)
     
     return logits
 
@@ -116,6 +124,7 @@ scheduler = LinearDecayWithMinLR(
     max_steps=total_steps
 )
 
+data_collator = DataCollatorForSeq2Seq(tokenizer=tokenizer, model=model)
 trainer = Trainer(
     model=model,
     args=training_args,
@@ -124,7 +133,8 @@ trainer = Trainer(
     tokenizer=tokenizer,
     preprocess_logits_for_metrics=preprocess_logits_for_metrics,
     compute_metrics=compute_metrics,
-    optimizers=(optimizer, scheduler)
+    optimizers=(optimizer, scheduler),
+    data_collator=data_collator
 )
 
 # [TRAINING]
