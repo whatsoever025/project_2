@@ -18,8 +18,7 @@ train_dataset, val_dataset, test_dataset, tokenizer = prepare_dataset(
     model_type="t5",
     max_input_length=512,
     max_target_length=128,
-    repo_id="TheSyx/cnn_dailymail_subset",
-    hf_token=os.getenv("HUGGINGFACE_TOKEN")
+    save_dir="/kaggle/working/cnn_dailymail_subset_csv"
 )
 
 # Define compute_metrics using ROUGE for summarization

@@ -3,54 +3,26 @@ import random
 import numpy as np
 import torch
 from transformers import AutoTokenizer
-from datasets import load_dataset, concatenate_datasets, load_from_disk, DatasetDict
+from datasets import load_dataset, concatenate_datasets, Dataset, DatasetDict
 from typing import Tuple
-from huggingface_hub import login, create_repo
+import pandas as pd
 
 def set_seed(seed: int = 42):
     """
     Sets the random seed for various libraries to ensure reproducibility.
-
-    This function sets the seed for Python's `random` module, NumPy, and PyTorch.
-    It also configures PyTorch to ensure deterministic behavior in computations,
-    which is particularly useful for debugging and reproducibility in machine
-    learning experiments.
-
-    Args:
-        seed (int, optional): The seed value to use for random number generation.
-                              Defaults to 42.
-
-    Notes:
-        - Setting `torch.backends.cudnn.deterministic` to `True` ensures that
-          convolution operations are deterministic, but may reduce performance.
-        - Setting `torch.backends.cudnn.benchmark` to `False` disables the
-          auto-tuner that selects the best algorithm for the hardware, which
-          also helps with reproducibility.
     """
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
-    torch.cuda.manual_seed_all(seed)  # For multi-GPU training
-    torch.backends.cudnn.deterministic = True  # Ensures reproducibility
-    torch.backends.cudnn.benchmark = False  # Disables auto-tuning
+    torch.cuda.manual_seed_all(seed)
+    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.benchmark = False
 
 TOKENIZER = None
 
 def load_dataset_splits() -> Tuple[dict, dict, dict]:
     """
     Loads the CNN/DailyMail dataset splits for training, validation, and testing.
-
-    This function uses the `datasets` library to load the CNN/DailyMail dataset
-    (version 3.0.0) from the Hugging Face Hub. It returns the train, validation,
-    and test splits as dictionaries.
-
-    Returns:
-        Tuple[dict, dict, dict]: A tuple containing the train, validation, and test
-        splits of the dataset.
-
-    Notes:
-        - Requires the `datasets` library to be installed.
-        - The dataset is expected to have 'article' and 'highlights' fields.
     """
     dataset = load_dataset("abisee/cnn_dailymail", "3.0.0")
     return dataset["train"], dataset["validation"], dataset["test"]
@@ -58,52 +30,23 @@ def load_dataset_splits() -> Tuple[dict, dict, dict]:
 def tokenize_t5(example, tokenizer, max_input_length: int = 512, max_target_length: int = 128):
     """
     Tokenizes input articles and target summaries for abstractive summarization using T5-style formatting.
-
-    This function tokenizes the article and highlights (summary) from the dataset,
-    ensuring that the input and target sequences are truncated to the specified
-    maximum lengths. The tokenized inputs are prepared for model training, with
-    labels set to the tokenized summaries.
-
-    Args:
-        example (dict): A dictionary containing:
-            - "article" (str): The input article text.
-            - "highlights" (str): The target summary text.
-        max_input_length (int, optional): Maximum length for the input article.
-                                         Defaults to 512.
-        max_target_length (int, optional): Maximum length for the target summary.
-                                          Defaults to 128.
-
-    Returns:
-        dict: A dictionary containing:
-            - "input_ids" (list of int): Tokenized article input IDs.
-            - "attention_mask" (list of int): Attention mask for the article.
-            - "labels" (list of int): Tokenized summary IDs.
     """
     input_text = "summarize: " + example["article"]
-
-    # Tokenize the article
     model_inputs = tokenizer(
         input_text,
         max_length=max_input_length,
-        padding="max_length",
-        truncation=True,
+        truncation=True,  # Remove padding="max_length" for dynamic padding
         return_tensors="pt"
     )
-
-    # Tokenize the summary (labels)
     labels = tokenizer(
         text_target=example["highlights"],
         max_length=max_target_length,
-        padding="max_length",
         truncation=True,
         return_tensors="pt"
     )
-
-    # Remove the tensor wrapping for compatibility with Dataset
     model_inputs["input_ids"] = model_inputs["input_ids"].squeeze(0).tolist()
     model_inputs["attention_mask"] = model_inputs["attention_mask"].squeeze(0).tolist()
     model_inputs["labels"] = labels["input_ids"].squeeze(0).tolist()
-
     return model_inputs
 
 def tokenize_bart(example, tokenizer, max_input_length=512, max_target_length=128):
@@ -113,21 +56,18 @@ def tokenize_bart(example, tokenizer, max_input_length=512, max_target_length=12
     model_inputs = tokenizer(
         example["article"],
         max_length=max_input_length,
-        padding="max_length",
         truncation=True,
         return_tensors="pt"
     )
     labels = tokenizer(
         text_target=example["highlights"],
         max_length=max_target_length,
-        padding="max_length",
         truncation=True,
         return_tensors="pt"
     )
     model_inputs["input_ids"] = model_inputs["input_ids"].squeeze(0).tolist()
     model_inputs["attention_mask"] = model_inputs["attention_mask"].squeeze(0).tolist()
     model_inputs["labels"] = labels["input_ids"].squeeze(0).tolist()
-
     return model_inputs
 
 def prepare_dataset(
@@ -135,22 +75,20 @@ def prepare_dataset(
     model_type: str = "t5",
     max_input_length: int = 512,
     max_target_length: int = 128,
-    repo_id: str = "TheSyx/cnn_dailymail_subset",
-    hf_token: str = None
+    save_dir: str = "./cnn_dailymail_subset_csv"
 ) -> Tuple[dict, dict, dict, AutoTokenizer]:
     """
     Prepares the CNN/DailyMail dataset for abstractive summarization by taking 20% of the initial data
     and resplitting it into train, validation, and test sets with an 8:1:1 ratio. If the subset exists
-    on the Hugging Face Hub, it loads the splits; otherwise, it creates, uploads, and then uses them.
+    as CSV files in save_dir, it loads the splits; otherwise, it creates them and saves as CSV files
+    for manual upload to Hugging Face Hub.
 
     Args:
         tokenizer_name (str): The name or path of the tokenizer to be loaded.
         model_type (str, optional): Model type ("t5" or "bart"). Defaults to "t5".
         max_input_length (int, optional): Maximum length for the input article. Defaults to 512.
         max_target_length (int, optional): Maximum length for the target summary. Defaults to 128.
-        repo_id (str, optional): Hugging Face repository ID to save/load the subset dataset.
-                                 Defaults to "TheSyx/cnn_dailymail_subset".
-        hf_token (str, optional): Hugging Face API token for authentication. Defaults to None.
+        save_dir (str, optional): Directory to save/load CSV files. Defaults to "./cnn_dailymail_subset_csv".
 
     Returns:
         Tuple[dict, dict, dict, AutoTokenizer]: A tuple containing the processed training dataset,
@@ -158,28 +96,20 @@ def prepare_dataset(
     """
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 
-    # Authenticate with Hugging Face Hub
-    token = hf_token or os.environ.get("HUGGINGFACE_TOKEN")
-    if not token:
-        raise RuntimeError("Hugging Face token not provided. Set hf_token or HUGGINGFACE_TOKEN environment variable.")
-    login(token=token)
+    # Define paths for CSV files
+    train_csv = os.path.join(save_dir, "train.csv")
+    val_csv = os.path.join(save_dir, "validation.csv")
+    test_csv = os.path.join(save_dir, "test.csv")
 
-    # Try to load dataset from Hugging Face Hub
-    try:
-        print(f"Attempting to load dataset from {repo_id}")
-        dataset = load_dataset(repo_id)
-        train_data = dataset["train"]
-        val_data = dataset["validation"]
-        test_data = dataset["test"]
-        print(f"Loaded preprocessed dataset from {repo_id}")
-    except Exception as e:
-        print(f"Dataset not found on Hub or error loading: {e}. Creating and uploading new subset.")
-
-        # Create repository if it doesn't exist
-        try:
-            create_repo(repo_id, token=token, repo_type="dataset", exist_ok=True)
-        except Exception as e:
-            raise RuntimeError(f"Failed to create repository {repo_id}: {e}")
+    # Check if CSV files exist
+    if os.path.exists(train_csv) and os.path.exists(val_csv) and os.path.exists(test_csv):
+        print(f"Loading dataset from CSV files in {save_dir}")
+        train_data = Dataset.from_pandas(pd.read_csv(train_csv))
+        val_data = Dataset.from_pandas(pd.read_csv(val_csv))
+        test_data = Dataset.from_pandas(pd.read_csv(test_csv))
+        print(f"Loaded dataset: Train size: {len(train_data)}, Validation size: {len(val_data)}, Test size: {len(test_data)}")
+    else:
+        print(f"Creating and saving new dataset subset as CSV files in {save_dir}")
 
         # Load dataset splits
         train_data, val_data, test_data = load_dataset_splits()
@@ -210,19 +140,12 @@ def prepare_dataset(
         val_data = subset_dataset.select(val_indices)
         test_data = subset_dataset.select(test_indices)
 
-        # Create a new dataset dictionary
-        subset_dataset_dict = DatasetDict({
-            "train": train_data,
-            "validation": val_data,
-            "test": test_data
-        })
-
-        # Upload to Hugging Face Hub
-        try:
-            subset_dataset_dict.push_to_hub(repo_id, token=token)
-            print(f"Dataset subset uploaded to {repo_id}")
-        except Exception as e:
-            raise RuntimeError(f"Failed to upload dataset to {repo_id}: {e}")
+        # Save splits as CSV files
+        os.makedirs(save_dir, exist_ok=True)
+        train_data.to_csv(train_csv)
+        val_data.to_csv(val_csv)
+        test_data.to_csv(test_csv)
+        print(f"Dataset subset saved as CSV files to {save_dir}: Train size: {len(train_data)}, Validation size: {len(val_data)}, Test size: {len(test_data)}")
 
     # Select tokenization function based on model type
     if model_type == "t5":
@@ -253,3 +176,17 @@ def prepare_dataset(
     )
 
     return train_dataset, val_dataset, test_dataset, tokenizer
+
+if __name__ == "__main__":
+    # Example usage
+    train_dataset, val_dataset, test_dataset, tokenizer = prepare_dataset(
+        tokenizer_name="t5-base",
+        model_type="t5",
+        max_input_length=512,
+        max_target_length=128,
+        save_dir="./cnn_dailymail_subset_csv"
+    )
+    print(f"Train dataset size: {len(train_dataset)}")
+    print(f"Validation dataset size: {len(val_dataset)}")
+    print(f"Test dataset size: {len(test_dataset)}")
+    print(f"Tokenizer vocab size: {len(tokenizer)}")
