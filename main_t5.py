@@ -9,7 +9,6 @@ import numpy as np
 from transformers import TrainingArguments, Trainer, T5ForConditionalGeneration, T5Tokenizer, AdamW
 import torch
 
-torch.cuda.empty_cache()
 # [PREPARING DATASET AND FUNCTIONS]
 wandb.login(key=os.getenv("WANDB_API_KEY"))
 huggingface_hub.login(token=os.getenv("HUGGINGFACE_TOKEN"))
@@ -19,22 +18,30 @@ train_dataset, val_dataset, test_dataset, tokenizer = prepare_dataset(TOKENIZER_
 # Define compute_metrics using ROUGE for summarization
 rouge = evaluate.load("rouge")
 
+def preprocess_logits_for_metrics(logits, labels):
+    # Handle tuple
+    if isinstance(logits, tuple):
+        logits = logits[0]
+    
+    # Convert to tensor
+    if not isinstance(logits, torch.Tensor):
+        logits = torch.tensor(logits, device=logits.device if hasattr(logits, 'device') else 'cpu')
+    
+    # Handle logits
+    if logits.ndim == 4:  # (batch_size, num_beams, sequence_length, vocab_size)
+        logits = logits.argmax(dim=-1)  # (batch_size, num_beams, sequence_length)
+        logits = logits[:, 0, :]  # Select first beam
+    elif logits.ndim == 3:  # (batch_size, sequence_length, vocab_size)
+        logits = logits.argmax(dim=-1)  # (batch_size, sequence_length)
+    elif logits.ndim == 2:  # (batch_size, sequence_length)
+        pass
+    
+    return logits
+
 def compute_metrics(eval_pred):
     predictions, labels = eval_pred
-    if isinstance(predictions, tuple):
-        predictions = np.array(predictions[0])  # Extract first element of tuple
-    # Handle logits: convert to token IDs
-    if predictions.ndim == 4:  # Shape: (batch_size, num_beams, sequence_length, vocab_size)
-        predictions = np.argmax(predictions, axis=-1)  # Shape: (batch_size, num_beams, sequence_length)
-        # Select the first beam (best candidate)
-        predictions = predictions[:, 0, :]  # Shape: (batch_size, sequence_length)
-    elif predictions.ndim == 3:  # Shape: (batch_size, sequence_length, vocab_size)
-        predictions = np.argmax(predictions, axis=-1)  # Shape: (batch_size, sequence_length)
-    # Convert to list of sequences
-    predictions = predictions.tolist() if isinstance(predictions, np.ndarray) else predictions
     # Remove padding tokens
-    predictions = [[id for id in seq if id != tokenizer.pad_token_id] for seq in predictions]
-    # Process labels (ensure no padding)
+    predictions = [[id for id in seq if id != tokenizer.pad_token_id] for seq in predictions.tolist()]
     labels = [[id for id in seq if id != tokenizer.pad_token_id] for seq in labels.tolist()]
     # Decode predictions and labels
     decoded_preds = tokenizer.batch_decode(predictions, skip_special_tokens=True)
@@ -61,10 +68,10 @@ else:
 training_args = TrainingArguments(
     run_name=EXPERIMENT_NAME_T5,
     report_to="wandb",
-    # evaluation_strategy='steps',
-    # save_strategy='steps',
-    # eval_steps=EVAL_STEPS_T5,
-    # save_steps=SAVE_STEPS_T5,
+    evaluation_strategy='steps',
+    save_strategy='steps',
+    eval_steps=EVAL_STEPS_T5,
+    save_steps=SAVE_STEPS_T5,
     per_device_train_batch_size=TRAIN_BATCH_SIZE_T5,
     per_device_eval_batch_size=EVAL_BATCH_SIZE_T5,
     num_train_epochs=NUM_TRAIN_EPOCHS_T5,
@@ -74,7 +81,7 @@ training_args = TrainingArguments(
     output_dir=EXPERIMENT_RESULTS_DIR_T5,
     logging_dir=EXPERIMENT_RESULTS_DIR_T5 + "/logs",
     logging_steps=LOGGING_STEPS_T5,
-    # load_best_model_at_end=True,
+    load_best_model_at_end=True,
     metric_for_best_model="eval_rougeL",
     greater_is_better=True,
     save_total_limit=2,
@@ -109,6 +116,7 @@ trainer = Trainer(
     train_dataset=train_dataset,
     eval_dataset=val_dataset,
     tokenizer=tokenizer,
+    preprocess_logits_for_metrics=preprocess_logits_for_metrics,
     compute_metrics=compute_metrics,
     optimizers=(optimizer, scheduler)
 )
@@ -120,6 +128,7 @@ else:
     trainer.train()
 
 # [EVALUATING]
+torch.cuda.empty_cache()
 test_results = trainer.evaluate(test_dataset, metric_key_prefix="test")
 
 # [SAVING THINGS]
