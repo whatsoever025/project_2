@@ -21,10 +21,6 @@ rouge = evaluate.load("rouge")
 
 def compute_metrics(eval_pred):
     predictions, labels = eval_pred
-    # Debug output
-    print(f"Predictions type: {type(predictions)}, shape: {getattr(predictions, 'shape', 'N/A')}")
-    print(f"Sample prediction: {predictions[0][:10] if isinstance(predictions, (list, tuple)) else predictions[:10]}")
-    # Convert tuple to array if necessary
     if isinstance(predictions, tuple):
         predictions = np.array(predictions[0])  # Extract first element of tuple
     # Handle logits: convert to token IDs

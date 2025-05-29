@@ -161,10 +161,10 @@ def prepare_dataset(
     train_data, val_data, test_data = load_dataset_splits()
 
     # train_size = int(0.01 * len(train_data))
-    train_size = 10  
+    train_size = 500  
     val_size = int(0.02 * len(val_data))      
-    # test_size = int(0.02 * len(test_data)) 
-    test_size = 10   
+    test_size = int(0.02 * len(test_data)) 
+    # test_size = 10   
     train_indices = random.sample(range(len(train_data)), train_size)
     val_indices = random.sample(range(len(val_data)), val_size)
     test_indices = random.sample(range(len(test_data)), test_size)
