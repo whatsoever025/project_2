@@ -155,20 +155,14 @@ def prepare_dataset(
     Returns:
         Tuple[dict, dict, dict, AutoTokenizer]: A tuple containing the processed training dataset,
         validation dataset, testing dataset, and the loaded tokenizer.
-
-    Raises:
-        ValueError: If model_type is not "t5" or "bart".
-        RuntimeError: If authentication or upload to Hugging Face Hub fails.
     """
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 
     # Authenticate with Hugging Face Hub
-    if hf_token:
-        login(token=hf_token)
-    elif "HUGGINGFACE_TOKEN" in os.environ:
-        login(token=os.environ["HUGGINGFACE_TOKEN"])
-    else:
+    token = hf_token or os.environ.get("HUGGINGFACE_TOKEN")
+    if not token:
         raise RuntimeError("Hugging Face token not provided. Set hf_token or HUGGINGFACE_TOKEN environment variable.")
+    login(token=token)
 
     # Try to load dataset from Hugging Face Hub
     try:
@@ -180,6 +174,12 @@ def prepare_dataset(
         print(f"Loaded preprocessed dataset from {repo_id}")
     except Exception as e:
         print(f"Dataset not found on Hub or error loading: {e}. Creating and uploading new subset.")
+
+        # Create repository if it doesn't exist
+        try:
+            create_repo(repo_id, token=token, repo_type="dataset", exist_ok=True)
+        except Exception as e:
+            raise RuntimeError(f"Failed to create repository {repo_id}: {e}")
 
         # Load dataset splits
         train_data, val_data, test_data = load_dataset_splits()
@@ -197,7 +197,7 @@ def prepare_dataset(
         train_ratio, val_ratio, test_ratio = 0.8, 0.1, 0.1
         train_size = int(train_ratio * subset_size)
         val_size = int(val_ratio * subset_size)
-        test_size = subset_size - train_size - val_size  # Ensure exact split
+        test_size = subset_size - train_size - val_size
 
         # Shuffle indices and split
         shuffled_indices = random.sample(range(subset_size), subset_size)
@@ -211,7 +211,6 @@ def prepare_dataset(
         test_data = subset_dataset.select(test_indices)
 
         # Create a new dataset dictionary
-        from datasets import DatasetDict
         subset_dataset_dict = DatasetDict({
             "train": train_data,
             "validation": val_data,
@@ -220,7 +219,7 @@ def prepare_dataset(
 
         # Upload to Hugging Face Hub
         try:
-            subset_dataset_dict.push_to_hub(repo_id, token=hf_token or os.environ["HUGGINGFACE_TOKEN"])
+            subset_dataset_dict.push_to_hub(repo_id, token=token)
             print(f"Dataset subset uploaded to {repo_id}")
         except Exception as e:
             raise RuntimeError(f"Failed to upload dataset to {repo_id}: {e}")
