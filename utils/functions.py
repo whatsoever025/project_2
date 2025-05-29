@@ -233,3 +233,17 @@ def prepare_dataset(
     )
 
     return train_dataset, val_dataset, test_dataset, tokenizer
+
+
+if __name__ == "__main__":
+    set_seed(42)
+    train_dataset, val_dataset, test_dataset, tokenizer = prepare_dataset(
+        tokenizer_name="t5-small",
+        model_type="t5",
+        max_input_length=512,
+        max_target_length=128,
+        save_dir="./cnn_dailymail_subset"
+    )
+    print(f"Train dataset size: {len(train_dataset)}")
+    print(f"Validation dataset size: {len(val_dataset)}")
+    print(f"Test dataset size: {len(test_dataset)}")
