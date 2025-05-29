@@ -54,12 +54,26 @@ def preprocess_logits_for_metrics(logits, labels):
 
 def compute_metrics(eval_pred):
     predictions, labels = eval_pred
+    # Convert to numpy for processing
+    predictions = np.array(predictions)
+    labels = np.array(labels)
+    # Validate token IDs
+    vocab_size = tokenizer.vocab_size
+    predictions = np.clip(predictions, 0, vocab_size - 1)
+    predictions[predictions < 0] = tokenizer.pad_token_id
+    labels = np.clip(labels, 0, vocab_size - 1)
+    labels[labels < 0] = tokenizer.pad_token_id
     # Remove padding tokens
-    predictions = [[id for id in seq if id != tokenizer.pad_token_id] for seq in predictions.tolist()]
-    labels = [[id for id in seq if id != tokenizer.pad_token_id] for seq in labels.tolist()]
+    predictions = [[int(id) for id in seq if id != tokenizer.pad_token_id] for seq in predictions]
+    labels = [[int(id) for id in seq if id != tokenizer.pad_token_id] for seq in labels]
     # Decode predictions and labels
-    decoded_preds = tokenizer.batch_decode(predictions, skip_special_tokens=True)
-    decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
+    try:
+        decoded_preds = tokenizer.batch_decode(predictions, skip_special_tokens=True)
+        decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
+    except Exception as e:
+        print(f"Decoding error: {e}")
+        decoded_preds = [""] * len(predictions)
+        decoded_labels = [""] * len(labels)
     # Compute ROUGE metrics
     return rouge.compute(predictions=decoded_preds, references=decoded_labels)
 
