@@ -13,7 +13,14 @@ import torch
 wandb.login(key=os.getenv("WANDB_API_KEY"))
 huggingface_hub.login(token=os.getenv("HUGGINGFACE_TOKEN"))
 
-train_dataset, val_dataset, test_dataset, tokenizer = prepare_dataset(TOKENIZER_T5)
+train_dataset, val_dataset, test_dataset, tokenizer = prepare_dataset(
+    tokenizer_name=TOKENIZER_T5,
+    model_type="t5",
+    max_input_length=512,
+    max_target_length=128,
+    repo_id="TheSyx/cnn_dailymail_subset",
+    hf_token=os.getenv("HUGGINGFACE_TOKEN")
+)
 
 # Define compute_metrics using ROUGE for summarization
 rouge = evaluate.load("rouge")
