@@ -5,6 +5,7 @@ import torch
 from transformers import AutoTokenizer
 from datasets import load_dataset, concatenate_datasets, load_from_disk
 from typing import Tuple
+from huggingface_hub import HfApi, Repository, login
 
 def set_seed(seed: int = 42):
     """
@@ -91,7 +92,7 @@ def tokenize_t5(example, tokenizer, max_input_length: int = 512, max_target_leng
 
     # Tokenize the summary (labels)
     labels = tokenizer(
-        text_target=example["highlights"],  # Updated to avoid deprecation warning
+        text_target=example["highlights"],
         max_length=max_target_length,
         padding="max_length",
         truncation=True,
@@ -117,7 +118,7 @@ def tokenize_bart(example, tokenizer, max_input_length=512, max_target_length=12
         return_tensors="pt"
     )
     labels = tokenizer(
-        text_target=example["highlights"],  # Updated to avoid deprecation warning
+        text_target=example["highlights"],
         max_length=max_target_length,
         padding="max_length",
         truncation=True,
@@ -134,39 +135,51 @@ def prepare_dataset(
     model_type: str = "t5",
     max_input_length: int = 512,
     max_target_length: int = 128,
-    save_dir: str = "./cnn_dailymail_subset"
+    repo_id: str = "TheSyx/cnn_dailymail_subset",
+    hf_token: str = None
 ) -> Tuple[dict, dict, dict, AutoTokenizer]:
     """
     Prepares the CNN/DailyMail dataset for abstractive summarization by taking 20% of the initial data
-    and resplitting it into train, validation, and test sets with an 8:1:1 ratio. If the subset is already
-    saved, it loads the saved splits; otherwise, it creates and saves them.
+    and resplitting it into train, validation, and test sets with an 8:1:1 ratio. If the subset exists
+    on the Hugging Face Hub, it loads the splits; otherwise, it creates, uploads, and then uses them.
 
     Args:
         tokenizer_name (str): The name or path of the tokenizer to be loaded.
         model_type (str, optional): Model type ("t5" or "bart"). Defaults to "t5".
         max_input_length (int, optional): Maximum length for the input article. Defaults to 512.
         max_target_length (int, optional): Maximum length for the target summary. Defaults to 128.
-        save_dir (str, optional): Directory to save/load the subset dataset. Defaults to "./cnn_dailymail_subset".
+        repo_id (str, optional): Hugging Face repository ID to save/load the subset dataset.
+                                 Defaults to "TheSyx/cnn_dailymail_subset".
+        hf_token (str, optional): Hugging Face API token for authentication. Defaults to None.
 
     Returns:
         Tuple[dict, dict, dict, AutoTokenizer]: A tuple containing the processed training dataset,
         validation dataset, testing dataset, and the loaded tokenizer.
+
+    Raises:
+        ValueError: If model_type is not "t5" or "bart".
+        RuntimeError: If authentication or upload to Hugging Face Hub fails.
     """
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 
-    # Define paths for saving splits
-    train_path = os.path.join(save_dir, "train")
-    val_path = os.path.join(save_dir, "validation")
-    test_path = os.path.join(save_dir, "test")
-
-    # Check if preprocessed dataset exists
-    if os.path.exists(train_path) and os.path.exists(val_path) and os.path.exists(test_path):
-        print(f"Loading preprocessed dataset from {save_dir}")
-        train_data = load_from_disk(train_path)
-        val_data = load_from_disk(val_path)
-        test_data = load_from_disk(test_path)
+    # Authenticate with Hugging Face Hub
+    if hf_token:
+        login(token=hf_token)
+    elif "HUGGINGFACE_TOKEN" in os.environ:
+        login(token=os.environ["HUGGINGFACE_TOKEN"])
     else:
-        print(f"Creating and saving new dataset subset in {save_dir}")
+        raise RuntimeError("Hugging Face token not provided. Set hf_token or HUGGINGFACE_TOKEN environment variable.")
+
+    # Try to load dataset from Hugging Face Hub
+    try:
+        print(f"Attempting to load dataset from {repo_id}")
+        dataset = load_dataset(repo_id)
+        train_data = dataset["train"]
+        val_data = dataset["validation"]
+        test_data = dataset["test"]
+        print(f"Loaded preprocessed dataset from {repo_id}")
+    except Exception as e:
+        print(f"Dataset not found on Hub or error loading: {e}. Creating and uploading new subset.")
 
         # Load dataset splits
         train_data, val_data, test_data = load_dataset_splits()
@@ -197,12 +210,20 @@ def prepare_dataset(
         val_data = subset_dataset.select(val_indices)
         test_data = subset_dataset.select(test_indices)
 
-        # Save the splits
-        os.makedirs(save_dir, exist_ok=True)
-        train_data.save_to_disk(train_path)
-        val_data.save_to_disk(val_path)
-        test_data.save_to_disk(test_path)
-        print(f"Dataset subset saved to {save_dir}")
+        # Create a new dataset dictionary
+        from datasets import DatasetDict
+        subset_dataset_dict = DatasetDict({
+            "train": train_data,
+            "validation": val_data,
+            "test": test_data
+        })
+
+        # Upload to Hugging Face Hub
+        try:
+            subset_dataset_dict.push_to_hub(repo_id, token=hf_token or os.environ["HUGGINGFACE_TOKEN"])
+            print(f"Dataset subset uploaded to {repo_id}")
+        except Exception as e:
+            raise RuntimeError(f"Failed to upload dataset to {repo_id}: {e}")
 
     # Select tokenization function based on model type
     if model_type == "t5":
@@ -242,7 +263,8 @@ if __name__ == "__main__":
         model_type="t5",
         max_input_length=512,
         max_target_length=128,
-        save_dir="./cnn_dailymail_subset"
+        repo_id="TheSyx/cnn_dailymail_subset",
+        hf_token=os.getenv("HUGGINGFACE_TOKEN")
     )
     print(f"Train dataset size: {len(train_dataset)}")
     print(f"Validation dataset size: {len(val_dataset)}")
