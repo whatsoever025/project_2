@@ -117,7 +117,7 @@ with open(EXPERIMENT_RESULTS_DIR_T5 + "/test_results.txt", "w") as f:
 api = huggingface_hub.HfApi()
 api.upload_large_folder(
     folder_path=RESULTS_DIR_T5,
-    repo_id="auphong2707/nlp-summarization",
+    repo_id="TheSyx/text-summarization",
     repo_type="model",
     private=False
 )
