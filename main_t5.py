@@ -20,10 +20,29 @@ rouge = evaluate.load("rouge")
 
 def compute_metrics(eval_pred):
     predictions, labels = eval_pred
+    # Debug output
     print(f"Predictions type: {type(predictions)}, shape: {getattr(predictions, 'shape', 'N/A')}")
-    print(f"Sample prediction: {predictions[0][:10]}")  # Print first 10 tokens of first prediction
+    print(f"Sample prediction: {predictions[0][:10] if isinstance(predictions, (list, tuple)) else predictions[:10]}")
+    # Convert tuple to array if necessary
+    if isinstance(predictions, tuple):
+        predictions = np.array(predictions[0])  # Extract first element of tuple
+    # Handle logits: convert to token IDs
+    if predictions.ndim == 4:  # Shape: (batch_size, num_beams, sequence_length, vocab_size)
+        predictions = np.argmax(predictions, axis=-1)  # Shape: (batch_size, num_beams, sequence_length)
+        # Select the first beam (best candidate)
+        predictions = predictions[:, 0, :]  # Shape: (batch_size, sequence_length)
+    elif predictions.ndim == 3:  # Shape: (batch_size, sequence_length, vocab_size)
+        predictions = np.argmax(predictions, axis=-1)  # Shape: (batch_size, sequence_length)
+    # Convert to list of sequences
+    predictions = predictions.tolist() if isinstance(predictions, np.ndarray) else predictions
+    # Remove padding tokens
+    predictions = [[id for id in seq if id != tokenizer.pad_token_id] for seq in predictions]
+    # Process labels (ensure no padding)
+    labels = [[id for id in seq if id != tokenizer.pad_token_id] for seq in labels.tolist()]
+    # Decode predictions and labels
     decoded_preds = tokenizer.batch_decode(predictions, skip_special_tokens=True)
     decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
+    # Compute ROUGE metrics
     return rouge.compute(predictions=decoded_preds, references=decoded_labels)
 
 # [SETTING UP MODEL AND TRAINING ARGUMENTS]
