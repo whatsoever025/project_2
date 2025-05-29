@@ -3,7 +3,7 @@ import random
 import numpy as np
 import torch
 from transformers import AutoTokenizer
-from datasets import load_dataset
+from datasets import load_dataset, concatenate_datasets, load_from_disk
 from typing import Tuple
 
 def set_seed(seed: int = 42):
@@ -90,14 +90,13 @@ def tokenize_t5(example, tokenizer, max_input_length: int = 512, max_target_leng
     )
 
     # Tokenize the summary (labels)
-    with tokenizer.as_target_tokenizer():
-        labels = tokenizer(
-            example["highlights"],
-            max_length=max_target_length,
-            padding="max_length",
-            truncation=True,
-            return_tensors="pt"
-        )
+    labels = tokenizer(
+        text_target=example["highlights"],  # Updated to avoid deprecation warning
+        max_length=max_target_length,
+        padding="max_length",
+        truncation=True,
+        return_tensors="pt"
+    )
 
     # Remove the tensor wrapping for compatibility with Dataset
     model_inputs["input_ids"] = model_inputs["input_ids"].squeeze(0).tolist()
@@ -117,14 +116,13 @@ def tokenize_bart(example, tokenizer, max_input_length=512, max_target_length=12
         truncation=True,
         return_tensors="pt"
     )
-    with tokenizer.as_target_tokenizer():
-        labels = tokenizer(
-            example["highlights"],
-            max_length=max_target_length,
-            padding="max_length",
-            truncation=True,
-            return_tensors="pt"
-        )
+    labels = tokenizer(
+        text_target=example["highlights"],  # Updated to avoid deprecation warning
+        max_length=max_target_length,
+        padding="max_length",
+        truncation=True,
+        return_tensors="pt"
+    )
     model_inputs["input_ids"] = model_inputs["input_ids"].squeeze(0).tolist()
     model_inputs["attention_mask"] = model_inputs["attention_mask"].squeeze(0).tolist()
     model_inputs["labels"] = labels["input_ids"].squeeze(0).tolist()
@@ -135,17 +133,20 @@ def prepare_dataset(
     tokenizer_name: str,
     model_type: str = "t5",
     max_input_length: int = 512,
-    max_target_length: int = 128
+    max_target_length: int = 128,
+    save_dir: str = "./cnn_dailymail_subset"
 ) -> Tuple[dict, dict, dict, AutoTokenizer]:
     """
     Prepares the CNN/DailyMail dataset for abstractive summarization by taking 20% of the initial data
-    and resplitting it into train, validation, and test sets with an 8:1:1 ratio.
+    and resplitting it into train, validation, and test sets with an 8:1:1 ratio. If the subset is already
+    saved, it loads the saved splits; otherwise, it creates and saves them.
 
     Args:
         tokenizer_name (str): The name or path of the tokenizer to be loaded.
         model_type (str, optional): Model type ("t5" or "bart"). Defaults to "t5".
         max_input_length (int, optional): Maximum length for the input article. Defaults to 512.
         max_target_length (int, optional): Maximum length for the target summary. Defaults to 128.
+        save_dir (str, optional): Directory to save/load the subset dataset. Defaults to "./cnn_dailymail_subset".
 
     Returns:
         Tuple[dict, dict, dict, AutoTokenizer]: A tuple containing the processed training dataset,
@@ -153,35 +154,55 @@ def prepare_dataset(
     """
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 
-    # Load dataset splits
-    train_data, val_data, test_data = load_dataset_splits()
+    # Define paths for saving splits
+    train_path = os.path.join(save_dir, "train")
+    val_path = os.path.join(save_dir, "validation")
+    test_path = os.path.join(save_dir, "test")
 
-    # Combine all splits into a single dataset
-    from datasets import concatenate_datasets
-    full_dataset = concatenate_datasets([train_data, val_data, test_data])
+    # Check if preprocessed dataset exists
+    if os.path.exists(train_path) and os.path.exists(val_path) and os.path.exists(test_path):
+        print(f"Loading preprocessed dataset from {save_dir}")
+        train_data = load_from_disk(train_path)
+        val_data = load_from_disk(val_path)
+        test_data = load_from_disk(test_path)
+    else:
+        print(f"Creating and saving new dataset subset in {save_dir}")
 
-    # Take 20% of the combined dataset
-    total_size = len(full_dataset)
-    subset_size = int(0.2 * total_size)
-    subset_indices = random.sample(range(total_size), subset_size)
-    subset_dataset = full_dataset.select(subset_indices)
+        # Load dataset splits
+        train_data, val_data, test_data = load_dataset_splits()
 
-    # Resplit into 8:1:1 (train:validation:test)
-    train_ratio, val_ratio, test_ratio = 0.8, 0.1, 0.1
-    train_size = int(train_ratio * subset_size)
-    val_size = int(val_ratio * subset_size)
-    test_size = subset_size - train_size - val_size  # Ensure exact split
+        # Combine all splits into a single dataset
+        full_dataset = concatenate_datasets([train_data, val_data, test_data])
 
-    # Shuffle indices and split
-    shuffled_indices = random.sample(range(subset_size), subset_size)
-    train_indices = shuffled_indices[:train_size]
-    val_indices = shuffled_indices[train_size:train_size + val_size]
-    test_indices = shuffled_indices[train_size + val_size:]
+        # Take 20% of the combined dataset
+        total_size = len(full_dataset)
+        subset_size = int(0.2 * total_size)
+        subset_indices = random.sample(range(total_size), subset_size)
+        subset_dataset = full_dataset.select(subset_indices)
 
-    # Create new splits
-    train_data = subset_dataset.select(train_indices)
-    val_data = subset_dataset.select(val_indices)
-    test_data = subset_dataset.select(test_indices)
+        # Resplit into 8:1:1 (train:validation:test)
+        train_ratio, val_ratio, test_ratio = 0.8, 0.1, 0.1
+        train_size = int(train_ratio * subset_size)
+        val_size = int(val_ratio * subset_size)
+        test_size = subset_size - train_size - val_size  # Ensure exact split
+
+        # Shuffle indices and split
+        shuffled_indices = random.sample(range(subset_size), subset_size)
+        train_indices = shuffled_indices[:train_size]
+        val_indices = shuffled_indices[train_size:train_size + val_size]
+        test_indices = shuffled_indices[train_size + val_size:]
+
+        # Create new splits
+        train_data = subset_dataset.select(train_indices)
+        val_data = subset_dataset.select(val_indices)
+        test_data = subset_dataset.select(test_indices)
+
+        # Save the splits
+        os.makedirs(save_dir, exist_ok=True)
+        train_data.save_to_disk(train_path)
+        val_data.save_to_disk(val_path)
+        test_data.save_to_disk(test_path)
+        print(f"Dataset subset saved to {save_dir}")
 
     # Select tokenization function based on model type
     if model_type == "t5":
