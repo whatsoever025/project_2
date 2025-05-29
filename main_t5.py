@@ -20,6 +20,8 @@ rouge = evaluate.load("rouge")
 
 def compute_metrics(eval_pred):
     predictions, labels = eval_pred
+    print(f"Predictions type: {type(predictions)}, shape: {getattr(predictions, 'shape', 'N/A')}")
+    print(f"Sample prediction: {predictions[0][:10]}")  # Print first 10 tokens of first prediction
     decoded_preds = tokenizer.batch_decode(predictions, skip_special_tokens=True)
     decoded_labels = tokenizer.batch_decode(labels, skip_special_tokens=True)
     return rouge.compute(predictions=decoded_preds, references=decoded_labels)
