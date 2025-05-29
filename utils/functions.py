@@ -138,44 +138,58 @@ def prepare_dataset(
     max_target_length: int = 128
 ) -> Tuple[dict, dict, dict, AutoTokenizer]:
     """
-    Prepares the CNN/DailyMail dataset for abstractive summarization.
-
-    This function loads the dataset, initializes the tokenizer, and tokenizes the
-    train, validation, and test splits. It returns the processed datasets and the
-    tokenizer.
+    Prepares the CNN/DailyMail dataset for abstractive summarization by taking 20% of the initial data
+    and resplitting it into train, validation, and test sets with an 8:1:1 ratio.
 
     Args:
         tokenizer_name (str): The name or path of the tokenizer to be loaded.
-        max_input_length (int, optional): Maximum length for the input article.
-                                         Defaults to 512.
-        max_target_length (int, optional): Maximum length for the target summary.
-                                          Defaults to 128.
+        model_type (str, optional): Model type ("t5" or "bart"). Defaults to "t5".
+        max_input_length (int, optional): Maximum length for the input article. Defaults to 512.
+        max_target_length (int, optional): Maximum length for the target summary. Defaults to 128.
 
     Returns:
-        Tuple[dict, dict, dict, AutoTokenizer]: A tuple containing the processed
-        training dataset, validation dataset, testing dataset, and the loaded tokenizer.
+        Tuple[dict, dict, dict, AutoTokenizer]: A tuple containing the processed training dataset,
+        validation dataset, testing dataset, and the loaded tokenizer.
     """
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 
     # Load dataset splits
     train_data, val_data, test_data = load_dataset_splits()
 
-    train_size = int(0.2 * len(train_data))
-    val_size = int(0.2 * len(val_data))
-    test_size = int(0.2 * len(test_data))
-    # val_size = 1000 
-    # test_size = 1000
-    train_indices = random.sample(range(len(train_data)), train_size)
-    val_indices = random.sample(range(len(val_data)), val_size)
-    test_indices = random.sample(range(len(test_data)), test_size)
-    train_data = train_data.select(train_indices)
-    val_data = val_data.select(val_indices)
-    test_data = test_data.select(test_indices)
+    # Combine all splits into a single dataset
+    from datasets import concatenate_datasets
+    full_dataset = concatenate_datasets([train_data, val_data, test_data])
 
+    # Take 20% of the combined dataset
+    total_size = len(full_dataset)
+    subset_size = int(0.2 * total_size)
+    subset_indices = random.sample(range(total_size), subset_size)
+    subset_dataset = full_dataset.select(subset_indices)
+
+    # Resplit into 8:1:1 (train:validation:test)
+    train_ratio, val_ratio, test_ratio = 0.8, 0.1, 0.1
+    train_size = int(train_ratio * subset_size)
+    val_size = int(val_ratio * subset_size)
+    test_size = subset_size - train_size - val_size  # Ensure exact split
+
+    # Shuffle indices and split
+    shuffled_indices = random.sample(range(subset_size), subset_size)
+    train_indices = shuffled_indices[:train_size]
+    val_indices = shuffled_indices[train_size:train_size + val_size]
+    test_indices = shuffled_indices[train_size + val_size:]
+
+    # Create new splits
+    train_data = subset_dataset.select(train_indices)
+    val_data = subset_dataset.select(val_indices)
+    test_data = subset_dataset.select(test_indices)
+
+    # Select tokenization function based on model type
     if model_type == "t5":
         tokenize_fn = lambda ex: tokenize_t5(ex, tokenizer, max_input_length, max_target_length)
     elif model_type == "bart":
         tokenize_fn = lambda ex: tokenize_bart(ex, tokenizer, max_input_length, max_target_length)
+    else:
+        raise ValueError(f"Unsupported model_type: {model_type}. Use 't5' or 'bart'.")
 
     # Tokenize datasets
     train_dataset = train_data.map(
