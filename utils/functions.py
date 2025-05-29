@@ -5,7 +5,7 @@ import torch
 from transformers import AutoTokenizer
 from datasets import load_dataset, concatenate_datasets, load_from_disk
 from typing import Tuple
-from huggingface_hub import HfApi, Repository, login
+from huggingface_hub import login, create_repo
 
 def set_seed(seed: int = 42):
     """
