@@ -84,7 +84,7 @@ def tokenize_pegasus(example, tokenizer, max_input_length, max_target_length):
         padding=False
     )
     model_inputs["labels"] = labels["input_ids"]
-    return inputs
+    return model_inputs
 
 def prepare_dataset(
     tokenizer_name: str,
