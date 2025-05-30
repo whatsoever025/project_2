@@ -70,6 +70,22 @@ def tokenize_bart(example, tokenizer, max_input_length=512, max_target_length=12
     model_inputs["labels"] = labels["input_ids"].squeeze(0).tolist()
     return model_inputs
 
+def tokenize_pegasus(example, tokenizer, max_input_length, max_target_length):
+    model_inputs = tokenizer(
+        example["article"],
+        max_length=max_input_length,
+        truncation=True,
+        padding=False
+    )
+    labels = tokenizer(
+        example["highlights"],
+        max_length=max_target_length,
+        truncation=True,
+        padding=False
+    )
+    model_inputs["labels"] = labels["input_ids"]
+    return inputs
+
 def prepare_dataset(
     tokenizer_name: str,
     model_type: str = "t5",
@@ -152,6 +168,8 @@ def prepare_dataset(
         tokenize_fn = lambda ex: tokenize_t5(ex, tokenizer, max_input_length, max_target_length)
     elif model_type == "bart":
         tokenize_fn = lambda ex: tokenize_bart(ex, tokenizer, max_input_length, max_target_length)
+    elif model_type == "pegasus":
+        tokenize_fn = lambda ex: tokenize_pegasus(ex, tokenizer, max_input_length, max_target_length)
     else:
         raise ValueError(f"Unsupported model_type: {model_type}. Use 't5' or 'bart'.")
 
