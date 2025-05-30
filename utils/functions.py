@@ -141,7 +141,7 @@ def prepare_dataset(
 
         # Resplit into 8:1:1 (train:validation:test)
         train_ratio, val_ratio, test_ratio = 0.8, 0.1, 0.1
-        train_size = 50
+        train_size = int(train_ratio * subset_size)
         val_size = int(val_ratio * subset_size)
         test_size = subset_size - train_size - val_size
 
