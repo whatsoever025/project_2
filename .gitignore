@@ -169,3 +169,11 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# Data
+data/
+/wandb/
+
+# Hugging Face model cache and artifacts
+/model_cache/
+/model_cache/**
