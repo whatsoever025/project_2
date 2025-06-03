@@ -2,3 +2,6 @@ transformers==4.47.0
 evaluate==0.4.3
 datasets==2.15.0
 rouge_score==0.1.2
+uvicorn
+fastapi
+python-multipart
