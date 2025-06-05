@@ -34,16 +34,16 @@ def preprocess_logits_for_metrics(logits, labels):
         logits = torch.tensor(logits, device=logits.device if hasattr(logits, 'device') else 'cpu')
     
     # Handle logits or token IDs
-    if logits.ndim == 4:  # (batch_size, num_beams, sequence_length, vocab_size)
-        logits = logits.argmax(dim=-1)[:, 0, :]  # Select first beam
-    elif logits.ndim == 3:  # (batch_size, sequence_length, vocab_size)
+    if logits.ndim == 4:
+        logits = logits.argmax(dim=-1)[:, 0, :]
+    elif logits.ndim == 3:
         logits = logits.argmax(dim=-1)
-    elif logits.ndim == 2:  # (batch_size, sequence_length) - already token IDs
+    elif logits.ndim == 2:
         pass
     else:
         raise ValueError(f"Unexpected logits shape: {logits.shape}")
 
-    # Clip token IDs to valid range [0, vocab_size)
+    # Clip token IDs to valid range
     vocab_size = tokenizer.vocab_size
     logits = torch.clamp(logits, min=0, max=vocab_size - 1)
     

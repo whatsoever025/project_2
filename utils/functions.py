@@ -35,7 +35,7 @@ def tokenize_t5(example, tokenizer, max_input_length: int = 512, max_target_leng
     model_inputs = tokenizer(
         input_text,
         max_length=max_input_length,
-        truncation=True,  # Remove padding="max_length" for dynamic padding
+        truncation=True,
         return_tensors="pt"
     )
     labels = tokenizer(
@@ -93,23 +93,7 @@ def prepare_dataset(
     max_target_length: int = 128,
     save_dir: str = "./cnn_dailymail_subset_csv"
 ) -> Tuple[dict, dict, dict, AutoTokenizer]:
-    """
-    Prepares the CNN/DailyMail dataset for abstractive summarization by taking 20% of the initial data
-    and resplitting it into train, validation, and test sets with an 8:1:1 ratio. If the subset exists
-    as CSV files in save_dir, it loads the splits; otherwise, it creates them and saves as CSV files
-    for manual upload to Hugging Face Hub.
 
-    Args:
-        tokenizer_name (str): The name or path of the tokenizer to be loaded.
-        model_type (str, optional): Model type ("t5" or "bart"). Defaults to "t5".
-        max_input_length (int, optional): Maximum length for the input article. Defaults to 512.
-        max_target_length (int, optional): Maximum length for the target summary. Defaults to 128.
-        save_dir (str, optional): Directory to save/load CSV files. Defaults to "./cnn_dailymail_subset_csv".
-
-    Returns:
-        Tuple[dict, dict, dict, AutoTokenizer]: A tuple containing the processed training dataset,
-        validation dataset, testing dataset, and the loaded tokenizer.
-    """
     tokenizer = AutoTokenizer.from_pretrained(tokenizer_name)
 
     # Define paths for CSV files
@@ -139,7 +123,7 @@ def prepare_dataset(
         subset_indices = random.sample(range(total_size), subset_size)
         subset_dataset = full_dataset.select(subset_indices)
 
-        # Resplit into 8:1:1 (train:validation:test)
+        # Resplit into 8:1:1
         train_ratio, val_ratio, test_ratio = 0.8, 0.1, 0.1
         train_size = int(train_ratio * subset_size)
         val_size = int(val_ratio * subset_size)
@@ -194,17 +178,3 @@ def prepare_dataset(
     )
 
     return train_dataset, val_dataset, test_dataset, tokenizer
-
-if __name__ == "__main__":
-    # Example usage
-    train_dataset, val_dataset, test_dataset, tokenizer = prepare_dataset(
-        tokenizer_name="t5-base",
-        model_type="t5",
-        max_input_length=512,
-        max_target_length=128,
-        save_dir="./cnn_dailymail_subset_csv"
-    )
-    print(f"Train dataset size: {len(train_dataset)}")
-    print(f"Validation dataset size: {len(val_dataset)}")
-    print(f"Test dataset size: {len(test_dataset)}")
-    print(f"Tokenizer vocab size: {len(tokenizer)}")
