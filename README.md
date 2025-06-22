@@ -1,6 +1,6 @@
 ## TEXT_SUMMARIZATION
 
-A lightweight and extensible **Abstractive Text Summarization** project powered by pretrained transformer models and a clean, interactive UI.
+A lightweight and extensible **Abstractive Text Summarization** project powered by pretrained transformer models and an interactive UI.
 
 ---
 
